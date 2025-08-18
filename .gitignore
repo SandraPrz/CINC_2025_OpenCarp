@@ -1,0 +1,11 @@
+# Ignorar
+
+*.vtu
+*.pts
+*.pkl
+*.npy
+*.belem
+*.bIon
+*.bpts
+*.vtk
+*.vtp

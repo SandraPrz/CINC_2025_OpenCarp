@@ -1,0 +1,26 @@
+{
+    "VTK_FILE": "./meshes/PSM1_tetra_a.vtk",
+    "VM_FILE": "./LL/2025-07-28_16-14-53_basic_250.0_MitchellSchaeffer/vm.dat",
+    "C_MATRIX_FILE": "/home/nodo38/sandra/GA_OpenCarp/CINC_2025_OpenCarp/CINC_2025_OpenCarp/auxiliar_codes/mesh/lead_field_C_matrix_refneg.npy",
+    "ECG_FILE": "./LL/2025-07-28_16-14-53_basic_250.0_MitchellSchaeffer/ecg_output.dat",
+    "MEASUREMENT_LEADS": [
+        657119,
+        640189,
+        654634,
+        624416,
+        651992,
+        632135,
+        625243,
+        619142,
+        648947
+    ],
+    "REFERENCE_AND_GROUND_NODE_ID": 660489,
+	"REFERENCE_IS_POSITIVE": false,
+    "SIGMA_HEART": 0.2,
+    "SIGMA_TORSO": 0.3,
+    "HEART_MATERIAL_ID": 2,
+    "SOLVER_TOL": 1e-12,
+    "SOLVER_MAXITER": 5000,
+    "SOLVER_TYPE": "BiCGSTAB",
+    "PRECON_METHOD": "AMG"
+}

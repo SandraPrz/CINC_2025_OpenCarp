@@ -1,0 +1,351 @@
+
+% Read nodes and elements from Elvira data files
+fprintf ('\n\n    ->  Reading ELVIRA geometry files ...\n');
+
+
+    ->  Reading ELVIRA geometry files ...
+elviraModel = readElviraGeometryFiles (elviraFolder);
+        *  Reading NODES file:   2 seconds, 700 msec 
+        *  Reading ELEMENTS file:   3 seconds, 752 msec 
+[Warning:  -> Elvira ELEMENT file <-  :::  There are more than one type of
+element] 
+[> In readElviraGeometryFiles at 85] 
+        *  Reading PROP_ELEM file {Fibre Orientation}:   3 seconds, 491 msec 
+        *  Reading MATERIALS file:   1 msec 
+%%% --------------------------------------------------------------------------------------------------------------------------------------- %%%
+%%%   elviraModel.NumNodes          ->  Number of nodes of heart model                                                                      %%% 
+%%%              .Coordinates       ->  x,y,z coordinates of all nodes of heart model                                                       %%% 
+%%%              .NumElements       ->  Number of cells/elements of heart model                                                             %%% 
+%%%              .ConnectivityList  ->  Connectivity list of all elements of heart model                                                    %%% 
+%%%              .FibreOrientation  ->  x,y,z components of a unit vector defining the fibre orientation for each element of heart model    %%% 
+%%%              .Material          ->  Label defining which material each element of heart model belongs to                                %%% 
+%%%              .LongCV            ->  Longitudinal conductivity for each material existing in heart model                                 %%% 
+%%%              .AnisotropyRatio   ->  Anisotropy ratio (trans. CV/long. CV) for each material existing in heart model                     %%% 
+%%% --------------------------------------------------------------------------------------------------------------------------------------- %%%
+
+% Load torso files
+fprintf ('\n    ->  Reading TORSO files ... \n');
+
+    ->  Reading TORSO files ... 
+%if nargin < 5
+    %organID = [];
+%end
+[torsoElements, torsoNodes] = readTorsoModelFile (torsoModelFile, tissueFile, myocardLabel, organID);
+    ->  Reading VTK file containing the TORSO model ...
+        *  Elapsed time for reading TORSO model:  58 seconds, 296 msec
+    ->  Getting TORSO NODES file ... 
+    ->  Creating TORSO ELEMENTS matrix ...
+        *  Getting the connectivity list of TORSO model:  7 seconds, 323 msec
+        *  Defining conductivities for different organs and tissues in TORSO model:  232 msec
+    ->  Getting MYOCARDIUM ELEMENTS of torso model:  52 msec
+    ->  Getting MYOCARDIUM NODES of torso model:  613 msec
+%%% ---------------------------------------------------------------------------------------------------------------------------------------------- %%% 
+%%%   torsoElements.NumElements       ->  Number of elements (tetrahedra) in torso model                                                           %%% 
+%%%                .ConnectivityList  ->  Connectivity list of elements (tetrahedra) of torso model                                                %%%
+%%%                .LongCV            ->  Longitudinal conductivity for each element of torso model                                                %%%
+%%%                .AnisotropyRatio   ->  Anisotropy ratio (transveral CV/longitudinal CV) for each element of torso model                         %%%
+%%%                .OrganID           ->  Label defining to which organ/tissue belongs each element of torso model                                 %%%
+%%%                .FibreOrientation  ->  x,y,z coordinates of the unit vector defining the fibre orientation for each element of torso model      %%%
+%%%                .MyoID             ->  Value of 'OrganID' label corresponding to 'myocardium' (ventricles and/or atria)                         %%%
+%%%                .NumMyoElements    ->  Number of elements of torso model labeled as 'myocardium'                                                %%%
+%%%                .MyoElements       ->  Boolean array indicating those elements of torso model labeled as 'myocardium'                           %%%
+%%% ---------------------------------------------------------------------------------------------------------------------------------------------- %%%
+%%%   torsoNodes.NumNodes     ->  Number of nodes in torso model                                                                                   %%%
+%%%             .Coordinates  ->  x,y,z coordinates of all nodes of torso model                                                                    %%% 
+%%%             .NumMyoNodes  ->  Number of nodes of torso model belonging to elements labeled as 'myocardium'                                     %%% 
+%%%             .MyoNodes     ->  Boolean array indiciating those nodes of torso model that belong to elements labeled as 'myocardium'             %%% 
+%%% ---------------------------------------------------------------------------------------------------------------------------------------------- %%%
+
+% Checking mesh
+fprintf ('    ->  Checking TORSO MODEL mesh. Looking for orphan nodes ... \n');
+    ->  Checking TORSO MODEL mesh. Looking for orphan nodes ... 
+conList = torsoElements.ConnectivityList;
+conList = unique (conList);
+nodesIDs = false (torsoNodes.NumNodes, 1);
+nodesIDs (conList) = true;
+% Check whether all nodes belong at least to one element of torso model mesh
+if all(nodesIDs)   % if so
+    fprintf ('           *  PERFECT. No orphan node was found \n');
+else   % if there are orphan nodes
+    indOrphan = find (nodesIDs);
+    fprintf ('\n\n\t\t\t WARNING  :::  generateFilesForTorsoPropagation ');
+    fprintf ('\n\t\t\t                   -  There are ORPHAN nodes in the mesh of TORSO MODEL');
+    fprintf ('\n\t\t\t                   -  Please, check mesh !!!!!!');
+    fprintf ('\n\t\t\t                   -  List of orphan nodes: \n\n');
+    fprintf ('\t\t\t                            %7d \n', indOrphan);
+    fprintf ('\n\n');
+    return
+end
+           *  PERFECT. No orphan node was found 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%  ********************************************************************* %
+%%% --  PARALLEL COMPUTING  --------------------------------------------- %
+%%% ********************************************************************* %
+tic
+disp (' ')
+ 
+disp (' PARALLEL COMPUTING:')
+ PARALLEL COMPUTING:
+% Check whether parallel pool is already open
+if ~isempty (gcp ('nocreate'))  % if so
+    % Close it
+    evalc ('delete (gcp)');
+end  % if NOT, just continue
+% Check OS of the system and get the number of processors available in machine
+if isunix  % if UNIX-based system
+    [~, numCPUs] = system ('nproc');         % for LINUX/UNIX systems
+elseif ispc   % if Windows running on PC
+    numCPUs = getenv ('NUMBER_OF_PROCESSORS');  % for WINDOWS systems
+end
+fprintf ('   - Number of cores available for parallel computing:  %s \n', numCPUs);
+   - Number of cores available for parallel computing:  64
+ 
+numCPUs = str2double (numCPUs);
+% Set 'numCPUs' as the maximum allowed number of workers in 'local' profile for parallel computing
+parOptions = parcluster ('local');
+parOptions.NumWorkers = numCPUs;
+% Open the parallel pool
+msg = evalc ('pool = parpool (''local'', numCPUs);');
+pool.IdleTimeout = Inf;   % Set 'No automatic shut down'
+disp (['   - ', msg(1:end-2)])
+   - Starting parallel pool (parpool) using the 'local' profile ... connected to 64 workers
+% Execution time
+disp (['   - Elapsed time for STARTING PARALLEL POOL:  ' executionTime(toc)])
+   - Elapsed time for STARTING PARALLEL POOL:  18 seconds, 508 msec
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%  ********************************************************************* %
+%%% --  COMPUTATION OF RADIO FOR NEIGHBOURS SEARCHES  ------------------- %
+%%% ********************************************************************* %
+tic
+fprintf ('\n    ->  Calculating mean length of edges of HEART MODEL to use it as radio for neighbour search ...\n');
+
+    ->  Calculating mean length of edges of HEART MODEL to use it as radio for neighbour search ...
+fprintf ('           *  Getting connectivity list of all edges of HEART MODEL:    ');
+           *  Getting connectivity list of all edges of HEART MODEL:    % Create a new VTKstruct
+heartModel = createVTKstruct ();
+heartModel.Dataset = 'UNSTRUCTURED_GRID';
+heartModel.Points = elviraModel.Coordinates;
+heartModel.NumPoints = elviraModel.NumNodes;
+% Assuming all elements in 'heartModel' are HEXAHEDRA
+heartModel.NumCells = elviraModel.NumElements;
+numNodesPerCell = size (elviraModel.ConnectivityList, 2);
+heartModel.Cells = cell (heartModel.NumCells, 2);
+heartModel.Cells(:,1) = num2cell (numNodesPerCell*ones(heartModel.NumCells,1), 2);
+heartModel.Cells(:,2) = (num2cell ((elviraModel.ConnectivityList-1)', 1))';  %%% Subtract '1' to 'elm_src' to transform Matlab/Elvira indices starting at '1' into VTK indices starting at '0'
+heartModel.CellTypes = 12 * ones (heartModel.NumCells, 1);  %%%  'VTK_HEXA = 12' -> '12' is the VTK code for hexahedral cell/element
+% Get edges
+edgesConList = findEdges (heartModel);
+fprintf ('%s \n', executionTime(toc));
+34 seconds, 893 msec 
+% Compute edges length
+tic
+fprintf ('           *  Computing edges length:    ');
+           *  Computing edges length:    edgesLength = getEdgesLength (edgesConList, heartModel);
+fprintf ('%s \n', executionTime(toc));
+365 msec 
+% Establish initial search radio as the average of edges legnth of HEART MODEL 
+radInit = mean (edgesLength);
+fprintf ('           *  Average of edges length of HEART MODEL:    %.4f \n', radInit);
+           *  Average of edges length of HEART MODEL:    0.3848 
+radInit = sqrt(3) * radInit;
+fprintf ('           *  Initial search radio {''radInit''}:    %.4f \n', radInit);
+           *  Initial search radio {'radInit'}:    0.6665 
+% Remove some variables to free memory
+clear heartModel numNodesPerCell edgesConList edgesLength;
+
+
+%%  ********************************************************************* %
+%%% --  MAPPING FIBRE ORIENTATION FROM HEART MODEL TO TORSO MODEL  ------ %
+%%% ********************************************************************* %
+% Material properties for heart elements in torso -> Add fibre orientation
+fprintf ('\n    ->  Assigning material properties to myocardial elements in torso ...\n');
+
+    ->  Assigning material properties to myocardial elements in torso ...
+tic
+fprintf ('           *  Getting conectivity list of cells/elements of TORSO MODEL labeled as ''myocardium'':    ');
+           *  Getting conectivity list of cells/elements of TORSO MODEL labeled as 'myocardium':    % Get the connectivity list of all cells/elements (tetrahedra) of torso model labeled as 'myocardium'
+conListMyoCells = torsoElements.ConnectivityList (torsoElements.MyoElements, :);
+% Reshape the list into a column vector
+conListMyoCells = reshape (conListMyoCells', numel(conListMyoCells), 1);
+% Take the x,y,z coordinates of points/nodes in the list
+myoNodesCoord = torsoNodes.Coordinates (conListMyoCells, :);
+% Break up the list into a cell array where each array element stores the x,y,z coordinates of the 4 nodes that form a given tetrahedron
+conListMyoCells = mat2cell (myoNodesCoord, 4*ones(torsoElements.NumMyoElements,1), 3);
+% Remove some variables in order to free memory
+clear myoNodesCoord;
+fprintf ('%s \n', executionTime(toc));
+6 seconds, 98 msec 
+tic
+fprintf ('           *  Computing centroids of elements of HEART MODEL:    ');
+           *  Computing centroids of elements of HEART MODEL:    % Compute centroids of cells/elements of heart model (ventricles or atria)
+heartCentroids = zeros (elviraModel.NumElements, 3);
+% Go through all cells/elements in HEART MODEL
+parfor i = 1:elviraModel.NumElements
+    % Calculate centroid of each cell/element
+    heartCentroids (i,:) = mean (elviraModel.Coordinates (elviraModel.ConnectivityList(i,:), :), 1); %#ok<PFBNS>
+end
+fprintf ('%s \n', executionTime(toc));
+8 seconds, 836 msec 
+% Assign the conductivity along the fibre and the conductivity ratio to the ventricles
+tic
+fprintf ('           *  Mapping FIBRE ORIENTATION from HEART MODEL to TORSO MODEL:    ');
+           *  Mapping FIBRE ORIENTATION from HEART MODEL to TORSO MODEL:    % Initialise some variables
+fibresMyo = zeros (torsoElements.NumMyoElements, 3);
+longConduct = zeros (torsoElements.NumMyoElements, 1);
+ratioTransLong = zeros (torsoElements.NumMyoElements, 1);
+distClosestHeartCell = zeros (torsoElements.NumMyoElements, 1);
+% Go through all cells/elements of torso model labeled as 'myocardium'
+parfor i = 1:torsoElements.NumMyoElements
+    % Compute centroid of current cell/element of torso model
+    Xc = mean (conListMyoCells{i});
+    % Find the cell/element of HEART MODEL which is the the closest to the current cell/element (tetrahedron) of TORSO MODEL
+    [indClosest, radSearch, dist] = find_neighbours (Xc, heartCentroids, radInit);
+    % Once the closest cell/elements of HEART MODEL has been found
+    % Calculate longitudinal conductivity ('sigma') taking into account the value from Elvira's material file
+    longConduct (i) = (1 + lambda) * elviraModel.LongCV(elviraModel.Material(indClosest)); %#ok<PFBNS>
+    % And also calculate the ratio between transversal and longitudinal conductivities ('a')
+    ratioTransLong (i) = elviraModel.AnisotropyRatio(elviraModel.Material(indClosest));
+    % Define fibre orientation
+    fibresMyo (i, :) = elviraModel.FibreOrientation (indClosest, :);
+    % Check whether a cell/element of HEART MODEL was found into a vicinity defined by 'radInit'
+    if radSearch > radInit  % if NOT
+        % Save the distance from current torso node to the closest node of
+        % cell/element of heart model taken for interpolation
+        distClosestHeartCell (i) = dist;
+    end  % if so, continue
+end
+
+% Save conductivities and fibre orientation in 'torsoElements' structure
+% Fibre orientation
+torsoElements.FibreOrientation = zeros (torsoElements.NumElements, 3);
+torsoElements.FibreOrientation(torsoElements.MyoElements,:) = fibresMyo (:,:);
+% Longitudinal conductivity
+torsoElements.LongCV(torsoElements.MyoElements) = longConduct;
+% Anisotropy ratio
+torsoElements.AnisotropyRatio = ones (torsoElements.NumElements, 1);          %%%  Anisotropy ratio (transveral CV / longitudinal CV)
+torsoElements.AnisotropyRatio(torsoElements.MyoElements) = ratioTransLong;    %%%     ->  All organs/tissue show isotropic propagation except for the 'myocardium'
+% Remove variables to free memory
+clear conListMyoCells fibresMyo;
+fprintf ('%s \n', executionTime(toc));
+19 minutes, 45 seconds 
+
+% Report about interpolation process
+fprintf ('\n    ->  Report about fibre orientation mapping process ...\n');
+
+    ->  Report about fibre orientation mapping process ...
+% Look for torso cells/elements for which NO cell/element of heart model was found into the vicinity defined by 'radInit'
+indMyoElements = find (torsoElements.MyoElements);
+nodeInd = indMyoElements (distClosestHeartCell > 0);
+distClosestHeartCell = distClosestHeartCell (distClosestHeartCell > 0);
+if ~isempty (nodeInd)
+    fprintf ('\n           *  WARNING. There are %d TORSO CELLS/ELEMENTS (of a total of %d) for which NO cell/element of HEART MODEL was found into a vicinity defined by ''radInit'' \n\n', ...
+                length(nodeInd), torsoElements.NumMyoElements);
+    fprintf ('\t\t\t\t Torso cell/elem. index \t\t Dist to centroid of the closest heart model element \n');
+    for j = 1:length(nodeInd)
+        fprintf ('\t\t\t        %6d     \t\t\t         %.3f \n', nodeInd(j), distClosestHeartCell(j));
+    end
+else
+    fprintf ('           *  PERFECT !!! For all TORSO CELLS/ELEMENTS labeled as ''myocardium'' a cell/element of HEART MODEL was found into the vicinity defined by ''radInit'' \n');
+end
+
+           *  WARNING. There are 2 TORSO CELLS/ELEMENTS (of a total of 4194181) for which NO cell/element of HEART MODEL was found into a vicinity defined by 'radInit' 
+
+				 Torso cell/elem. index 		 Dist to centroid of the closest heart model element 
+			        504514     			         0.822 
+			        2577849     			         1.146 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%  ********************************************************************* %
+%%% --  INTERPOLATION FOR MYOCARDIUM NODES  ----------------------------- %
+%%% ********************************************************************* %
+% Defining interpolation for myocardial target nodes
+tic
+fprintf ('\n    ->  Defining interpolation on MYOCARDIUM nodes of TORSO MODEL ... \n');
+
+    ->  Defining interpolation on MYOCARDIUM nodes of TORSO MODEL ... 
+% Take the x,y,z coordinates of torso nodes labeled as 'myocardium'
+myoNodesCoord = torsoNodes.Coordinates(torsoNodes.MyoNodes,:);
+distClosestHeartCell = zeros (torsoNodes.NumMyoNodes, 1);
+interpol = struct ('Id', [], 'alpha', []);
+% Go through all points/nodes of torso model belonging to cells/elements labeled as 'myocardium'
+parfor i = 1:torsoNodes.NumMyoNodes
+    % Take the x,y,z coordinates of the current node of torso model
+    torsoNodeCoord = myoNodesCoord(i,:);
+    % Find the centroid of heart model which is the closest to the current node of torso model
+    % The idea is to find the cell/element of heart model that contains the current node of torso model
+    [indClosest, radSearch, distCentroid] = find_neighbours (torsoNodeCoord, heartCentroids, radInit);
+    % Get the connectivity list of the cell/element of heart model corresponding to the closest centroid
+    conListClosest = elviraModel.ConnectivityList(indClosest,:); %#ok<PFBNS>
+    coordNodesHeartCell = elviraModel.Coordinates(conListClosest,:);
+    % Compute the euclidean distance from current node of torso model to each node that from the cell/element of heart model
+    dist = pdist2 (torsoNodeCoord, coordNodesHeartCell, 'euclidean');
+    % Get the interpolation coefficients based on the distance from current
+    % node of torso model to each node of the cell/element of heart model 
+    alpha = inter_coef (dist);
+    interpol(i).Id = conListClosest'; %#ok<PFOUS>
+    interpol(i).alpha = alpha';
+    % Check whether a cell/element of HEART MODEL was found into a vicinity defined by 'radInit'
+    if radSearch > radInit  % if NOT
+        % Save the distance from current torso node to the closest node of
+        % cell/element of heart model taken for interpolation
+        distClosestHeartCell (i) = distCentroid;
+    end  % if so, continue
+end
+fprintf ('           *  Elapsed time:   %s \n', executionTime(toc));
+           *  Elapsed time:   4 minutes, 22 seconds 
+
+% Report about interpolation process
+fprintf ('\n    ->  Report about the interpolation process ...\n');
+
+    ->  Report about the interpolation process ...
+% Look for torso nodes for which NO cell/element of heart model was found into the vicinity defined by 'radInit'
+nodeInd = indMyoElements (distClosestHeartCell > 0);
+distClosestHeartCell = distClosestHeartCell (distClosestHeartCell > 0);
+if ~isempty (nodeInd)
+    fprintf ('\n           *  WARNING. There are %d TORSO NODES (of a total of %d) for which NO cell/element of HEART MODEL was found into a vicinity defined by ''radInit'' \n\n', length(nodeInd), torsoNodes.NumMyoNodes);
+    fprintf ('\t\t\t\t Torso node index \t\t Dist to centroid of the closest heart model element \n');
+    for j = 1:length(nodeInd)
+        fprintf ('\t\t\t        %6d     \t\t\t         %.3f \n', nodeInd(j), distClosestHeartCell(j));
+    end
+else
+    fprintf ('           *  PERFECT !!! For all TORSO NODES labeled as ''myocardium'' a cell/element of HEART MODEL was found into the vicinity defined by ''radInit'' \n');
+end
+
+           *  WARNING. There are 3 TORSO NODES (of a total of 892526) for which NO cell/element of HEART MODEL was found into a vicinity defined by 'radInit' 
+
+				 Torso node index 		 Dist to centroid of the closest heart model element 
+			        951280     			         1.470 
+			        951308     			         1.455 
+			        951332     			         1.448 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Shut down parallel pool
+evalc ('delete (pool);');
+
+% Save data for torso propagation in a .mat file
+tic
+fprintf('\n    ->  Saving data for torso propagation in a .mat file ... \n');
+
+    ->  Saving data for torso propagation in a .mat file ... 
+save (dataFileName, 'torsoElements', 'torsoNodes', 'interpol');  %%% , '-v7.3');
+fprintf('\t\t\t *  Elapsed time:  %s \n', executionTime(toc));
+			 *  Elapsed time:  21 seconds, 814 msec 
+
+% Final message
+fprintf('\n    ->  FINISH !!!!!!!!!!!!!!\n');
+
+    ->  FINISH !!!!!!!!!!!!!!
+fprintf('\t\t\t *  Elapsed time for whole process:  %s \n\n', executionTime(toc(tStart)));
+			 *  Elapsed time for whole process:  27 minutes, 1 seconds 
+
+
+% Check whether it runs on a Matlab session or in deployed mode
+if ~isdeployed  % if Matlab session
+    % Close the log file
+    diary;
+    diary off;
+end   % if deployed mode, just continue
