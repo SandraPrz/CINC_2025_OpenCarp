@@ -28,12 +28,17 @@ def normalizar_señales(matriz):
     # Normalizar todas las columnas excepto la primera (tiempo)
     matriz_normalizada[:, 1:] = (matriz[:, 1:] - media) / desviacion_estandar
 
-    offsets = (matriz_normalizada[0, :] + matriz_normalizada[-1, :]) / 2
-    
-    matriz_normalizada_final= matriz_normalizada - offsets #esto afecta al calculo de los lats con la funcion correlate (pearsonr no se afecta porque internamente resta la media y las pone en 0 a las 2)
+    # Copiar la matriz normalizada
+    matriz_normalizada_final = matriz_normalizada.copy()
 
-    return matriz_normalizada_final
+
+    # Calcular offsets solo para las columnas de señal (omitimos la primera)
+    offsets = (matriz_normalizada[0, 1:] + matriz_normalizada[-1, 1:]) / 2
     
+    # Restar offsets solo a las columnas 1 en adelante
+    matriz_normalizada_final[:, 1:] = matriz_normalizada[:, 1:] - offsets
+    
+    return matriz_normalizada
 
 def ecg_calcul_normalized(ecg_aiso):
     """
