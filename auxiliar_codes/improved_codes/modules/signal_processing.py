@@ -28,15 +28,10 @@ def normalizar_señales(matriz):
     # Normalizar todas las columnas excepto la primera (tiempo)
     matriz_normalizada[:, 1:] = (matriz[:, 1:] - media) / desviacion_estandar
 
-    # Copiar la matriz normalizada
-    matriz_normalizada_final = matriz_normalizada.copy()
-
-
     # Calcular offsets solo para las columnas de señal (omitimos la primera)
-    offsets = (matriz_normalizada[0, 1:] + matriz_normalizada[-1, 1:]) / 2
-    
-    # Restar offsets solo a las columnas 1 en adelante
-    matriz_normalizada_final[:, 1:] = matriz_normalizada[:, 1:] - offsets
+    # Centrar cada columna para que su media sea 0 (excepto tiempo)
+    media_col = np.mean(matriz_normalizada[:, 1:], axis=0)
+    matriz_normalizada[:, 1:] -= media_col
     
     return matriz_normalizada
 
